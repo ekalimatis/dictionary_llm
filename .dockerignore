@@ -1,0 +1,9 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+harness*.html
+logs/*
+audio/*
+venv
+.venv

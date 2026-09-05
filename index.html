@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tech English Trainer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="logo">EN</span>
+        <div>
+          <div class="brand-title">Tech English Trainer</div>
+          <div class="brand-sub">IT-словарь и тренажёр повторения</div>
+        </div>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-view="dict">Словарь</button>
+        <button class="tab" data-view="repeat">Повторение</button>
+        <button class="tab" data-view="test">Тест</button>
+        <button class="tab" data-view="add">＋ Добавить</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <section id="view-dict" class="view">
+      <div class="panel dict-controls">
+        <input type="search" id="dictSearch" class="input" placeholder="Поиск: слово, перевод, пример…">
+        <span class="muted" id="dictCount"></span>
+      </div>
+      <div id="dictList" class="dict-list"></div>
+    </section>
+
+    <section id="view-test" class="view hidden">
+      <div id="testSetup" class="panel">
+        <h2>Настройки теста</h2>
+
+        <fieldset class="fieldset">
+          <legend>Тип вопросов</legend>
+          <label class="radio">
+            <input type="radio" name="testType" value="choice" checked>
+            <span>Выбор правильного варианта</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="testType" value="input">
+            <span>Ввод ответа вручную</span>
+          </label>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>Направление</legend>
+          <label class="radio">
+            <input type="radio" name="testDir" value="en-ru" checked>
+            <span>Английский → Русский (перевод слова)</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="testDir" value="ru-en">
+            <span>Русский → Английский (вспомнить слово)</span>
+          </label>
+        </fieldset>
+
+        <fieldset class="fieldset row">
+          <legend>Количество вопросов</legend>
+          <label class="radio">
+            <input type="radio" name="testSize" value="10" checked>
+            <span>10</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="testSize" value="20">
+            <span>20</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="testSize" value="all">
+            <span>Все</span>
+          </label>
+        </fieldset>
+
+        <p class="hint" id="typeHint">Показано слово и 4 варианта перевода — выбери правильный.</p>
+
+        <button id="btnStart" class="btn primary">Начать тест</button>
+      </div>
+
+      <div id="testQuiz" class="panel hidden">
+        <div class="quiz-head">
+          <span id="quizProgress"></span>
+          <div class="bar"><div class="fill" id="quizFill"></div></div>
+        </div>
+        <div id="quizBody"></div>
+      </div>
+
+      <div id="testResult" class="panel hidden">
+        <h2 id="resultScore"></h2>
+        <div id="resultMistakes"></div>
+        <div class="btn-row">
+          <button id="btnRetryWrong" class="btn">Повторить ошибки</button>
+          <button id="btnNewTest" class="btn primary">Новый тест</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-add" class="view hidden">
+      <div class="panel">
+        <h2>Добавить слово</h2>
+        <p class="muted">Введите слово или фразу. Карточку можно сгенерировать через локальную Ollama или заполнить вручную.</p>
+
+        <div class="add-row">
+          <input type="text" id="addWord" class="input" placeholder="Например: buyers, end up, yield…">
+          <button id="btnGen" class="btn primary">Сгенерировать через Ollama</button>
+        </div>
+        <div id="genStatus" class="st"></div>
+
+        <details class="oll-settings">
+          <summary>Настройки Ollama</summary>
+          <div class="settings-grid">
+            <label class="lbl">URL сервера
+              <input id="ollUrl" class="input" value="http://127.0.0.1:11434" placeholder="http://127.0.0.1:11434">
+              <span class="lbl-desc">Адрес API Ollama (порт по умолчанию 11434). Нужен именно API, а не веб-интерфейс. Если Ollama в Docker или на другом компьютере — укажите её адрес здесь.</span>
+            </label>
+            <label class="lbl">Модель
+              <div class="combo">
+                <input id="ollModel" class="input combo-input" value="llama3.1" placeholder="llama3.1" autocomplete="off" spellcheck="false">
+                <button type="button" id="ollModelBtn" class="combo-btn" title="Показать установленные модели">▾</button>
+                <div id="ollModelList" class="combo-list hidden"></div>
+              </div>
+              <span class="lbl-desc">Название установленной модели (см. <code>ollama list</code>). Нажмите ▾, чтобы выбрать из полного списка; можно ввести название вручную.</span>
+            </label>
+            <label class="lbl">Temperature (0–2)
+              <input id="ollTemp" type="number" class="input" value="0.2" min="0" max="2" step="0.1">
+              <span class="lbl-desc">«Температура» — степень случайности ответа. 0 — почти детерминированный результат, 1–2 — разнообразнее и свободнее. Для карточек слов рекомендуем 0.1–0.3, чтобы переводы были точными.</span>
+            </label>
+            <label class="lbl">Top-p (0–1)
+              <input id="ollTopP" type="number" class="input" value="0.9" min="0" max="1" step="0.05">
+              <span class="lbl-desc">Ядро сэмплирования (nucleus sampling): модель выбирает токены, пока их суммарная вероятность не достигнет p. 0.9 — разнообразнее, 0.1 — строже. Работает вместе с temperature.</span>
+            </label>
+            <label class="lbl">num_ctx (контекст, токенов)
+              <input id="ollNumCtx" type="number" class="input" value="4096" min="256" step="256">
+              <span class="lbl-desc">Размер окна контекста в токенах. Если модель сообщает об ошибке памяти — уменьшите (например до 2048). Если длинный промпт обрезается — увеличьте (8192 и выше, если позволяет память).</span>
+            </label>
+            <label class="lbl settings-wide">Системный промпт
+              <textarea id="ollSystem" class="input ta" rows="5" spellcheck="false" placeholder="Инструкции модели: формат JSON-карточки слова, требования к переводу…"></textarea>
+              <span class="lbl-desc">Инструкции для модели. Отправляется системным сообщением в <code>/api/chat</code>; само слово уходит отдельным user-сообщением. По умолчанию — запрос карточки слова (лемма, IPA, переводы, примеры).</span>
+              <span class="btn-row">
+                <button type="button" id="btnResetSystem" class="btn mini-btn">Сбросить к стандартному</button>
+              </span>
+            </label>
+            <span class="muted settings-note">Запрос идёт в /api/chat (messages: system + user). Параметры temperature, top_p, num_ctx передаются в options</span>
+          </div>
+          <div class="btn-row">
+            <button id="btnTestOll" class="btn" type="button">Проверить подключение</button>
+            <span id="testStatus" class="st"></span>
+          </div>
+        </details>
+
+        <div id="addFormWrap" class="hidden">
+          <h3>Карточка слова</h3>
+          <div class="form-grid">
+            <label class="lbl">Лемма (начальная форма) *
+              <input id="fLemma" class="input" placeholder="buyer">
+            </label>
+            <label class="lbl">Исходная форма (если отличается)
+              <input id="fOriginal" class="input" placeholder="buyers">
+            </label>
+            <label class="lbl">Транскрипция (IPA)
+              <input id="fTranscription" class="input" placeholder="/ˈbaɪə(r)/">
+            </label>
+            <label class="lbl">Часть речи
+              <input id="fPos" class="input" placeholder="сущ., гл., фраз. гл., выражение…">
+            </label>
+          </div>
+          <label class="lbl">Переводы * (строка на группу: <code>[контекст]</code> значение <code>|</code> доп. значения)
+            <textarea id="fRu" class="input ta" rows="4" placeholder="[e-commerce] покупатель | заказчик&#10;[безопасность] субъект закупки"></textarea>
+          </label>
+          <label class="lbl">Примеры (формат на строку: английский || перевод)
+            <textarea id="fEx" class="input ta" rows="3" placeholder="The price is set by the seller, but buyers decide. || Цену устанавливает продавец, но решают покупатели."></textarea>
+          </label>
+          <div class="form-grid two">
+            <label class="lbl">Устойчивые фразы и сочетания (по одной на строку)
+              <textarea id="fPhrases" class="input ta" rows="3" placeholder="buyer journey&#10;buyer persona"></textarea>
+            </label>
+            <label class="lbl">Примечания
+              <textarea id="fNotes" class="input ta" rows="3" placeholder="Синонимы, антонимы, особенности употребления…"></textarea>
+            </label>
+          </div>
+          <div class="btn-row">
+            <button id="btnSave" class="btn primary">Сохранить в словарь</button>
+            <button id="btnReset" class="btn">Очистить</button>
+          </div>
+          <div id="saveStatus" class="st"></div>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="ollLogPanel">
+        <div class="log-head">
+          <h2>Лог запросов к Ollama</h2>
+          <button id="btnClearLog" class="btn" type="button">Очистить лог</button>
+        </div>
+        <div id="ollLogList"></div>
+      </div>
+    </section>
+
+    <section id="view-repeat" class="view hidden">
+      <div class="panel" id="repSetup">
+        <h2>Повторение слов</h2>
+        <p class="muted">Слова выбираются случайно, показываются на экране и проговариваются. Переход к следующему — по кнопке «Дальше».</p>
+        <fieldset class="fieldset row">
+          <legend>Количество слов</legend>
+          <label class="radio"><input type="radio" name="repSize" value="10" checked><span>10</span></label>
+          <label class="radio"><input type="radio" name="repSize" value="20"><span>20</span></label>
+          <label class="radio"><input type="radio" name="repSize" value="30"><span>30</span></label>
+        </fieldset>
+        <fieldset class="fieldset row">
+          <legend>Перевод</legend>
+          <label class="radio"><input type="radio" name="repShow" value="hidden" checked><span>Скрыт (проверь себя)</span></label>
+          <label class="radio"><input type="radio" name="repShow" value="shown"><span>Показывать сразу</span></label>
+        </fieldset>
+        <button id="btnRepStart" class="btn primary">Начать повторение</button>
+        <div id="repStartStatus" class="st"></div>
+      </div>
+
+      <div class="panel hidden" id="repActive">
+        <div class="quiz-head">
+          <span class="muted" id="repProgress"></span>
+          <div class="bar"><div class="fill" id="repFill"></div></div>
+        </div>
+        <div class="rep-card">
+          <div class="q-prompt" id="repLemma"></div>
+          <div class="q-ipa" id="repMeta"></div>
+          <div class="btn-row">
+            <button id="repPlay" class="btn" type="button">🔊 Ещё раз</button>
+            <button id="repReveal" class="btn" type="button">Показать перевод</button>
+          </div>
+          <div class="rep-details">
+            <div id="repMeaning" class="rep-meaning hidden"></div>
+            <div id="repExamples"></div>
+          </div>
+        </div>
+        <div class="quiz-actions">
+          <button id="repNext" class="btn primary" type="button">Дальше</button>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="repResult">
+        <h2 id="repDoneTitle"></h2>
+        <div id="repDoneList"></div>
+        <div class="btn-row">
+          <button id="btnRepAgain" class="btn primary" type="button">Повторить эти же слова</button>
+          <button id="btnRepNew" class="btn" type="button">Новый случайный набор</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    Всего слов: <span id="footCount"></span> · Слова сохраняются в <code>data.json</code>. Запуск: <code>python server.py</code> → http://127.0.0.1:8000
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

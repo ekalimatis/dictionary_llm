@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Логи и временные файлы приложения
+logs/
+harness*.html
+*.log
+
+# Окружение
+.env
+.env.*
+
+# ОС / редакторы
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
