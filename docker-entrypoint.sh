@@ -5,10 +5,14 @@ set -e
 STORE="${WORD_STORE:-/data}"
 mkdir -p "$STORE/audio" "$STORE/logs"
 
-# При первом запуске (пустой volume) — скопировать начальный словарь
+# При первом запуске (пустой volume) — создать пустой словарь
 if [ ! -f "$STORE/data.json" ]; then
-  echo "==> data.json не найден, копирую шаблон из образа"
-  cp /app/data.json "$STORE/data.json"
+  echo "==> data.json не найден, создаю пустой словарь"
+  if [ -f /app/data.example.json ]; then
+    cp /app/data.example.json "$STORE/data.json"
+  else
+    echo "[]" > "$STORE/data.json"
+  fi
 fi
 
 export WORD_STORE="$STORE"
