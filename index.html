@@ -105,28 +105,33 @@
     <section id="view-add" class="view hidden">
       <div class="panel">
         <h2>Добавить слово</h2>
-        <p class="muted">Введите слово или фразу. Карточку можно сгенерировать через локальную Ollama или заполнить вручную.</p>
+        <p class="muted">Введите слово или фразу. Карточку можно сгенерировать через локальную Ollama или OpenAI-совместимый API (routerai.ru) или заполнить вручную.</p>
 
         <div class="add-row">
           <input type="text" id="addWord" class="input" placeholder="Например: buyers, end up, yield…">
-          <button id="btnGen" class="btn primary">Сгенерировать через Ollama</button>
+          <button id="btnGen" class="btn primary">Сгенерировать</button>
         </div>
         <div id="genStatus" class="st"></div>
 
         <details class="oll-settings">
-          <summary>Настройки Ollama</summary>
+          <summary>Настройки генерации</summary>
+          <fieldset class="fieldset row">
+            <legend>Провайдер</legend>
+            <label class="radio"><input type="radio" name="genProvider" value="ollama" checked><span>Ollama (локальная)</span></label>
+            <label class="radio"><input type="radio" name="genProvider" value="openai"><span>OpenAI API (routerai.ru)</span></label>
+          </fieldset>
           <div class="settings-grid">
             <label class="lbl">URL сервера
               <input id="ollUrl" class="input" value="http://127.0.0.1:11434" placeholder="http://127.0.0.1:11434">
-              <span class="lbl-desc">Адрес API Ollama (порт по умолчанию 11434). Нужен именно API, а не веб-интерфейс. Если Ollama в Docker или на другом компьютере — укажите её адрес здесь.</span>
+              <span class="lbl-desc" id="ollUrlDesc">Адрес API Ollama (порт по умолчанию 11434). Нужен именно API, а не веб-интерфейс. Если Ollama в Docker или на другом компьютере — укажите её адрес здесь.</span>
             </label>
             <label class="lbl">Модель
               <div class="combo">
                 <input id="ollModel" class="input combo-input" value="llama3.1" placeholder="llama3.1" autocomplete="off" spellcheck="false">
-                <button type="button" id="ollModelBtn" class="combo-btn" title="Показать установленные модели">▾</button>
+                <button type="button" id="ollModelBtn" class="combo-btn" title="Показать доступные модели">▾</button>
                 <div id="ollModelList" class="combo-list hidden"></div>
               </div>
-              <span class="lbl-desc">Название установленной модели (см. <code>ollama list</code>). Нажмите ▾, чтобы выбрать из полного списка; можно ввести название вручную.</span>
+              <span class="lbl-desc" id="ollModelDesc">Название установленной модели (см. <code>ollama list</code>). Нажмите ▾, чтобы выбрать из полного списка; можно ввести название вручную.</span>
             </label>
             <label class="lbl">Temperature (0–2)
               <input id="ollTemp" type="number" class="input" value="0.2" min="0" max="2" step="0.1">
@@ -147,7 +152,7 @@
                 <button type="button" id="btnResetSystem" class="btn mini-btn">Сбросить к стандартному</button>
               </span>
             </label>
-            <span class="muted settings-note">Запрос идёт в /api/chat (messages: system + user). Параметры temperature, top_p, num_ctx передаются в options</span>
+            <span class="muted settings-note">Ollama: запрос в /api/chat (options: temperature, top_p, num_ctx). OpenAI: запрос через сервер /api/llm/openai к https://routerai.ru/api/v1; ключ берётся из переменной окружения OPENAI_API_KEY.</span>
           </div>
           <div class="btn-row">
             <button id="btnTestOll" class="btn" type="button">Проверить подключение</button>

@@ -9,11 +9,8 @@ services:
       WORD_STORE: /data
       HOST: 0.0.0.0
       PORT: "8000"
-      # При необходимости укажите свой ключ fish.audio (если не задан —
-      # используется ключ из server.py)
-      # FISH_API_KEY: "sk-..."
-      # FISH_MODEL: "s2.1-pro-free"
-      # FISH_REFERENCE_ID: "711cf3ed00ab441a8f54a45058047b7a"
+    env_file:
+      - .env
     volumes:
       - wordtrainer_data:/data
 

@@ -6,6 +6,7 @@ import time
 import threading
 import datetime
 import urllib.request
+import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -38,6 +39,15 @@ def short(text, limit=200):
     text = str(text or "").replace("\n", " ").strip()
     return text if len(text) <= limit else text[:limit] + "…"
 
+
+# Загрузка переменных окружения из .env (python-dotenv, если установлен)
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(BASE_DIR, ".env"))
+except Exception:
+    pass
+
 MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
@@ -49,9 +59,13 @@ MIME_TYPES = {
 }
 
 FISH_TTS_URL = os.environ.get("FISH_TTS_URL") or "https://api.fish.audio/v1/tts"
-FISH_API_KEY = os.environ.get("FISH_API_KEY") or "sk-fish-hPVpem6y9EmwDMbHPp9qdDXiU0L5EQuUNVuDOVrFiXM"
+FISH_API_KEY = os.environ.get("FISH_API_KEY") or ""
 FISH_MODEL = os.environ.get("FISH_MODEL") or "s2.1-pro-free"
-FISH_REFERENCE_ID = os.environ.get("FISH_REFERENCE_ID") or "711cf3ed00ab441a8f54a45058047b7a"
+FISH_REFERENCE_ID = os.environ.get("FISH_REFERENCE_ID") or ""
+
+# OpenAI-совместимый провайдер (по умолчанию routerai.ru)
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY") or ""
+OPENAI_BASE_URL = (os.environ.get("OPENAI_BASE_URL") or "https://routerai.ru/api/v1").rstrip("/")
 
 
 def norm(s):
@@ -65,6 +79,8 @@ def tts_speech_text(lemma):
 
 
 def fish_tts_bytes(text):
+    if not FISH_API_KEY:
+        raise RuntimeError("FISH_API_KEY не задан — укажите его в .env или переменных окружения")
     t0 = time.time()
     try:
         payload = {
@@ -201,8 +217,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, words)
             return
+        if path == "/api/llm/models":
+            self._handle_openai_models()
+            return
         if path in ("/", ""):
             path = "/index.html"
+        if path.startswith("/api/"):
+            self._send_json(404, {"error": "Эндпоинт не найден: " + path + ". Перезапустите server.py, чтобы подхватить новые маршруты."})
+            return
         rel = path.lstrip("/")
         fpath = os.path.normpath(os.path.join(BASE_DIR, rel))
         if not fpath.startswith(BASE_DIR) or not os.path.isfile(fpath):
@@ -214,6 +236,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/api/llm/openai":
+            self._handle_openai_chat()
+            return
         if path == "/api/audio/lemma":
             self._handle_lemma_audio()
             return
@@ -221,6 +246,9 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_example_audio()
             return
         if path != "/api/words":
+            if path.startswith("/api/"):
+                self._send_json(404, {"error": "Эндпоинт не найден: " + path + ". Перезапустите server.py, чтобы подхватить новые маршруты."})
+                return
             self._send_text(404, "Not found", "text/plain; charset=utf-8")
             return
         body = self._read_json()
@@ -257,6 +285,141 @@ class Handler(BaseHTTPRequestHandler):
         log_event("word_add", {"id": clean["id"], "lemma": short(clean["lemma"]),
                                 "audio": clean.get("audio"), "tts_error": clean.get("tts_error")})
         self._send_json(201, {"entry": clean})
+
+    def _handle_openai_models(self):
+        if not OPENAI_API_KEY:
+            self._send_json(500, {"error": "OPENAI_API_KEY не задан в переменных окружения сервера"})
+            return
+        url = OPENAI_BASE_URL + "/models"
+        headers = {"Authorization": "Bearer " + OPENAI_API_KEY}
+        t0 = time.time()
+        try:
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+        except urllib.error.HTTPError as e:
+            raw = ""
+            try:
+                raw = e.read().decode("utf-8")
+            except Exception:
+                pass
+            log_event("external_request", {
+                "service": "openai_compat", "url": url, "model": "",
+                "text": "", "ok": False, "error": short(raw or ("HTTP " + str(e.code)), 200),
+                "duration_ms": int((time.time() - t0) * 1000),
+            })
+            self._send_json(502, {"error": "OpenAI API: " + (short(raw, 200) or ("HTTP " + str(e.code)))})
+            return
+        except Exception as e:
+            log_event("external_request", {
+                "service": "openai_compat", "url": url, "model": "",
+                "text": "", "ok": False, "error": short(str(e), 200),
+                "duration_ms": int((time.time() - t0) * 1000),
+            })
+            self._send_json(502, {"error": "OpenAI API недоступен: " + short(str(e), 200)})
+            return
+        try:
+            models = [m.get("id") for m in data.get("data", []) if m.get("id")]
+        except Exception:
+            models = []
+        log_event("external_request", {
+            "service": "openai_compat", "url": url, "model": "",
+            "text": "", "ok": True, "models": len(models),
+            "duration_ms": int((time.time() - t0) * 1000),
+        })
+        self._send_json(200, {"models": models})
+
+    def _handle_openai_chat(self):
+        """Прокси-запрос к OpenAI-совместимому API (routerai.ru)."""
+        if not OPENAI_API_KEY:
+            self._send_json(500, {"error": "OPENAI_API_KEY не задан в переменных окружения сервера"})
+            return
+        body = self._read_json()
+        if not isinstance(body, dict):
+            self._send_json(400, {"error": "Нужен JSON {model, messages, options}"})
+            return
+        model = str(body.get("model") or "").strip()
+        messages = body.get("messages")
+        if not model or not isinstance(messages, list) or not messages:
+            self._send_json(400, {"error": "Нужны model и messages"})
+            return
+        upstream = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+        }
+        options = body.get("options")
+        if isinstance(options, dict):
+            for key in ("temperature", "top_p", "max_tokens", "num_ctx"):
+                if options.get(key) is not None:
+                    if key == "num_ctx":
+                        upstream["max_tokens"] = options[key]
+                    else:
+                        upstream[key] = options[key]
+        url = OPENAI_BASE_URL + "/chat/completions"
+        headers = {
+            "Authorization": "Bearer " + OPENAI_API_KEY,
+            "Content-Type": "application/json",
+        }
+        last_text = ""
+        for m in messages[::-1]:
+            if isinstance(m, dict) and m.get("content"):
+                last_text = str(m["content"])[:200]
+                break
+        t0 = time.time()
+        try:
+            req = urllib.request.Request(
+                url, data=json.dumps(upstream).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+        except urllib.error.HTTPError as e:
+            raw = ""
+            try:
+                raw = e.read().decode("utf-8")
+            except Exception:
+                pass
+            log_event("external_request", {
+                "service": "openai_compat", "url": url, "model": model,
+                "text": last_text, "ok": False, "error": short(raw or ("HTTP " + str(e.code)), 300),
+                "duration_ms": int((time.time() - t0) * 1000),
+            })
+            try:
+                err = json.loads(raw)
+                msg = (err.get("error") or {}).get("message") or short(raw, 200)
+            except Exception:
+                msg = short(raw, 200) or ("HTTP " + str(e.code))
+            self._send_json(502, {"error": "OpenAI API: " + msg})
+            return
+        except Exception as e:
+            log_event("external_request", {
+                "service": "openai_compat", "url": url, "model": model,
+                "text": last_text, "ok": False, "error": short(str(e), 300),
+                "duration_ms": int((time.time() - t0) * 1000),
+            })
+            self._send_json(502, {"error": "OpenAI API недоступен: " + short(str(e), 300)})
+            return
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            log_event("external_request", {
+                "service": "openai_compat", "url": url, "model": model,
+                "text": last_text, "ok": False, "error": "неожиданный ответ: " + short(raw, 300),
+                "duration_ms": int((time.time() - t0) * 1000),
+            })
+            self._send_json(502, {"error": "OpenAI API вернул неожиданный ответ: " + short(raw, 300)})
+            return
+        log_event("external_request", {
+            "service": "openai_compat", "url": url, "model": model,
+            "text": last_text, "ok": True,
+            "duration_ms": int((time.time() - t0) * 1000),
+        })
+        self._send_json(200, {
+            "model": data.get("model") or model,
+            "message": {"role": "assistant", "content": content},
+            "usage": data.get("usage"),
+        })
 
     def _handle_lemma_audio(self):
         """Генерация/получение mp3 леммы: audio/<id>.mp3"""

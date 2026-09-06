@@ -17,6 +17,7 @@ harness*.html
 # Окружение
 .env
 .env.*
+!.env.example
 
 # ОС / редакторы
 .DS_Store

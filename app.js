@@ -1220,6 +1220,9 @@
   var OLL_DEFAULTS = {
     url: "http://127.0.0.1:11434",
     model: "llama3.1",
+    modelOllama: "llama3.1",
+    modelOpenai: "openai/gpt-4o-mini",
+    provider: "ollama",
     temperature: 0.2,
     topP: 0.9,
     numCtx: 4096,
@@ -1245,9 +1248,14 @@
       var raw = localStorage.getItem(OLL_SETTINGS_KEY);
       if (!raw) return OLL_DEFAULTS;
       var o = JSON.parse(raw);
+      var modelOllama = (o.modelOllama || o.model || OLL_DEFAULTS.modelOllama).trim();
+      var modelOpenai = (o.modelOpenai || OLL_DEFAULTS.modelOpenai).trim();
       return {
         url: (o.url || OLL_DEFAULTS.url).trim().replace(/\/+$/, ""),
-        model: o.model || OLL_DEFAULTS.model,
+        model: modelOllama,
+        modelOllama: modelOllama,
+        modelOpenai: modelOpenai,
+        provider: o.provider === "openai" ? "openai" : "ollama",
         temperature: clamp(toNum(o.temperature, OLL_DEFAULTS.temperature), 0, 2),
         topP: clamp(toNum(o.topP, OLL_DEFAULTS.topP), 0, 1),
         numCtx: Math.max(256, toInt(o.numCtx, OLL_DEFAULTS.numCtx)),
@@ -1263,12 +1271,19 @@
     return el && el.value ? String(el.value).trim() : fallback;
   }
 
+  function currentProvider() {
+    var r = document.querySelector('input[name="genProvider"]:checked');
+    return r && r.value === "openai" ? "openai" : "ollama";
+  }
+
   function liveSettings() {
     var s = ollSettings();
     var sp = fieldVal("ollSystem", s.systemPrompt);
+    var isOpenai = currentProvider() === "openai";
     return {
       url: fieldVal("ollUrl", s.url).replace(/\/+$/, ""),
-      model: fieldVal("ollModel", s.model),
+      model: fieldVal("ollModel", isOpenai ? s.modelOpenai : s.modelOllama),
+      provider: isOpenai ? "openai" : "ollama",
       temperature: clamp(toNum(fieldVal("ollTemp", String(s.temperature)), s.temperature), 0, 2),
       topP: clamp(toNum(fieldVal("ollTopP", String(s.topP)), s.topP), 0, 1),
       numCtx: Math.max(256, toInt(fieldVal("ollNumCtx", String(s.numCtx)), s.numCtx)),
@@ -1276,33 +1291,66 @@
     };
   }
 
+  function updateProviderUi() {
+    var isOpenai = currentProvider() === "openai";
+    var url = $("#ollUrl");
+    if (url) url.disabled = isOpenai;
+    var urlDesc = $("#ollUrlDesc");
+    if (urlDesc) {
+      urlDesc.textContent = isOpenai
+        ? "Для OpenAI-провайдера используется базовый адрес сервера (https://routerai.ru/api/v1) — поле не используется."
+        : "Адрес API Ollama (порт по умолчанию 11434). Нужен именно API, а не веб-интерфейс. Если Ollama в Docker или на другом компьютере — укажите её адрес здесь.";
+    }
+    var modelDesc = $("#ollModelDesc");
+    if (modelDesc) {
+      modelDesc.innerHTML = isOpenai
+        ? "Название модели OpenAI-провайдера (например gpt-4o-mini или openai/<модель>). Список доступных можно подгрузить кнопкой «Проверить подключение»."
+        : 'Название установленной модели (см. <code>ollama list</code>). Нажмите ▾, чтобы выбрать из полного списка; можно ввести название вручную.';
+    }
+    if (isOpenai) closeModelList();
+  }
+
   function applySettingsToInputs() {
     var s = ollSettings();
     $("#ollUrl").value = s.url;
-    $("#ollModel").value = s.model;
+    $("#ollModel").value = s.provider === "openai" ? s.modelOpenai : s.modelOllama;
+    var radio = document.querySelector('input[name="genProvider"][value="' + s.provider + '"]');
+    if (radio) radio.checked = true;
     $("#ollTemp").value = s.temperature;
     $("#ollTopP").value = s.topP;
     $("#ollNumCtx").value = s.numCtx;
     $("#ollSystem").value = s.systemPrompt;
+    updateProviderUi();
   }
 
   function saveOllSettings() {
-    var s = liveSettings();
+    var live = liveSettings();
+    var prev = ollSettings();
+    var modelOllama = prev.modelOllama;
+    var modelOpenai = prev.modelOpenai;
+    if (live.provider === "openai") {
+      modelOpenai = live.model;
+    } else {
+      modelOllama = live.model;
+    }
     try {
       localStorage.setItem(OLL_SETTINGS_KEY, JSON.stringify({
-        url: s.url,
-        model: s.model,
-        temperature: s.temperature,
-        topP: s.topP,
-        numCtx: s.numCtx,
-        systemPrompt: s.systemPrompt
+        url: live.url,
+        model: modelOllama,
+        modelOllama: modelOllama,
+        modelOpenai: modelOpenai,
+        provider: live.provider,
+        temperature: live.temperature,
+        topP: live.topP,
+        numCtx: live.numCtx,
+        systemPrompt: live.systemPrompt
       }));
     } catch (err) {
       /* ignore */
     }
   }
 
-  function shortOllError(msg, url) {
+  function shortOllError(msg, url, isOpenai) {
     msg = String(msg || "").replace(/^Ollama:\s*/i, "");
     var low = msg.toLowerCase();
     var corsNote = "";
@@ -1316,6 +1364,9 @@
       return msg + " Модель не смогла загрузиться — не хватает ресурсов. Закройте тяжёлые приложения, уменьшите num_ctx (например 2048) или выберите модель поменьше, затем перезапустите Ollama: ollama stop, затем ollama serve.";
     }
     if (low.indexOf("not found") !== -1) {
+      if (isOpenai) {
+        return msg + " Для routerai укажите корректный id модели из списка (кнопка «Проверить подключение»), например openai/gpt-4o-mini.";
+      }
       return msg + ". Скачайте модель: ollama pull <имя модели>.";
     }
     if (low.indexOf("fetch") !== -1 || low.indexOf("failed to fetch") !== -1 || low.indexOf("networkerror") !== -1 || low.indexOf("load failed") !== -1) {
@@ -1384,25 +1435,36 @@
     $("#fNotes").value = entry.notes || "";
   }
 
+  function cacheModels(models, replaceDefault) {
+    ollModelsCache = models.map(String);
+    var ml = $("#ollModelList");
+    if (ml && !ml.classList.contains("hidden")) setModelListContent();
+    if (ollModelsCache.length) {
+      var cur = $("#ollModel").value.trim();
+      if (!cur || (replaceDefault && cur === "llama3.1")) {
+        $("#ollModel").value = ollModelsCache[0];
+        saveOllSettings();
+      }
+    }
+    ollLoaded = true;
+  }
+
   function maybeLoadOllamaModels() {
     applySettingsToInputs();
     if (ollLoaded) return;
     var live = liveSettings();
+    if (live.provider === "openai") {
+      loadOpenAIModels();
+      return;
+    }
+    loadOllamaModels(live);
+  }
+
+  function loadOllamaModels(live) {
     var tagsUrl = live.url + "/api/tags";
     logFetch(tagsUrl, null, { kind: "tags", model: live.model, timeoutMs: 15000 })
       .then(function (data) {
-        var models = (data && data.models || []).map(function (m) { return m.name; });
-        ollModelsCache = models;
-        var ml = $("#ollModelList");
-        if (ml && !ml.classList.contains("hidden")) setModelListContent();
-        if (models.length) {
-          var cur = $("#ollModel").value.trim();
-          if (!cur || cur === "llama3.1") {
-            $("#ollModel").value = models[0];
-            saveOllSettings();
-          }
-        }
-        ollLoaded = true;
+        cacheModels((data && data.models || []).map(function (m) { return m.name; }), true);
       })
       .catch(function (err) {
         var msg = err && err.message ? err.message : String(err);
@@ -1411,12 +1473,36 @@
       });
   }
 
+  function loadOpenAIModels() {
+    var mUrl = "api/llm/models";
+    fetch(mUrl)
+      .then(function (r) {
+        return r.text().then(function (t) {
+          var d = null;
+          try { d = JSON.parse(t); } catch (e) { d = null; }
+          if (!r.ok) {
+            var msg = (d && d.error) || ("HTTP " + r.status + (t ? ": " + String(t).slice(0, 200) : ""));
+            throw new Error(msg);
+          }
+          return d || {};
+        });
+      })
+      .then(function (d) {
+        cacheModels(d && d.models || [], false);
+      })
+      .catch(function (err) {
+        var msg = err && err.message ? err.message : String(err);
+        ollModelsCache = [];
+        setGenStatus("OpenAI API: " + msg, "err");
+      });
+  }
+
   function setModelListContent() {
     var l = $("#ollModelList");
     if (!l) return;
     var typed = $("#ollModel").value.trim();
     if (!ollModelsCache.length) {
-      l.innerHTML = '<div class="oll-item empty">Список моделей пуст. Проверьте подключение к Ollama (см. сообщение выше).</div>';
+      l.innerHTML = '<div class="oll-item empty">Список моделей пуст. Проверьте подключение к провайдеру (см. сообщение выше).</div>';
       return;
     }
     var q = norm(typed);
@@ -1480,6 +1566,36 @@
     $("#" + id).addEventListener("change", saveOllSettings);
   });
 
+  $$('input[name="genProvider"]').forEach(function (r) {
+    r.addEventListener("change", function () {
+      var newProv = r.value;
+      var prev = ollSettings();
+      var curModel = ($("#ollModel").value || "").trim() ||
+        (prev.provider === "openai" ? prev.modelOpenai : prev.modelOllama);
+      var modelOllama = prev.modelOllama;
+      var modelOpenai = prev.modelOpenai;
+      if (prev.provider === "openai") modelOpenai = curModel;
+      else modelOllama = curModel;
+      try {
+        localStorage.setItem(OLL_SETTINGS_KEY, JSON.stringify({
+          url: prev.url,
+          model: modelOllama,
+          modelOllama: modelOllama,
+          modelOpenai: modelOpenai,
+          provider: newProv,
+          temperature: prev.temperature,
+          topP: prev.topP,
+          numCtx: prev.numCtx,
+          systemPrompt: prev.systemPrompt
+        }));
+      } catch (err) { /* ignore */ }
+      ollLoaded = false;
+      ollModelsCache = [];
+      setGenStatus("");
+      maybeLoadOllamaModels();
+    });
+  });
+
   $("#btnResetSystem").addEventListener("click", function () {
     $("#ollSystem").value = DEFAULT_SYSTEM_PROMPT;
     saveOllSettings();
@@ -1487,7 +1603,34 @@
   });
 
   $("#btnTestOll").addEventListener("click", function () {
-    var base = ollBaseUrl();
+    var live = liveSettings();
+    if (live.provider === "openai") {
+      setTestStatus("Проверяю OpenAI API…", "load");
+      fetch("api/llm/models")
+        .then(function (r) {
+          return r.text().then(function (t) {
+            var d = null;
+            try { d = JSON.parse(t); } catch (e) { d = null; }
+            if (!r.ok) {
+              var msg = (d && d.error) || ("HTTP " + r.status + (t ? ": " + String(t).slice(0, 200) : ""));
+              throw new Error(msg);
+            }
+            return d || {};
+          });
+        })
+        .then(function (d) {
+          var models = (d && d.models || []).map(String);
+          setTestStatus("OpenAI API доступен. Доступно моделей: " + models.length + ". Список обновлён.", "ok");
+          ollLoaded = false;
+          cacheModels(models, false);
+        })
+        .catch(function (err) {
+          var msg = err && err.message ? err.message : String(err);
+          setTestStatus(shortOllError(msg, "", true), "err");
+        });
+      return;
+    }
+    var base = live.url;
     setTestStatus("Проверяю подключение…", "load");
     var verUrl = base + "/api/version";
     logFetch(verUrl, null, { kind: "version", timeoutMs: 10000 })
@@ -1528,10 +1671,28 @@
   function normalizeIpa(ipa) {
     ipa = String(ipa || "").trim();
     if (!ipa) return "";
+    if (ipa.charAt(0) === "/" && ipa.charAt(1) === "/") ipa = ipa.slice(1);
+    if (ipa.slice(-2) === "//") ipa = ipa.slice(0, -1);
     if (ipa.charAt(0) !== "/" && ipa.charAt(ipa.length - 1) !== "/") {
       return "/" + ipa + "/";
     }
     return ipa;
+  }
+
+  function parsePhrases(items) {
+    if (!Array.isArray(items)) return [];
+    var out = [];
+    items.forEach(function (p) {
+      if (typeof p === "string") {
+        if (p.trim()) out.push(p.trim());
+      } else if (p && typeof p === "object") {
+        var text = String(p.phrase || p.value || "").trim();
+        if (!text) return;
+        var tr = p.translation ? String(p.translation).trim() : "";
+        out.push(text + (tr ? " (" + tr + ")" : ""));
+      }
+    });
+    return out;
   }
 
   function modelTextFrom(data) {
@@ -1636,7 +1797,8 @@
         examples: parseExamples(card.examples)
       };
       if (card.original_form) entry.original_form = String(card.original_form);
-      if (Array.isArray(card.phrases)) entry.phrases = card.phrases.map(String);
+      var phrases = parsePhrases(card.phrases);
+      if (phrases.length) entry.phrases = phrases;
       if (card.notes) entry.notes = String(card.notes);
       if (!entry.lemma || !translations.length) return { error: "В ответе нет полей lemma/translations" };
       return { entry: entry };
@@ -1651,9 +1813,10 @@
       setGenStatus("Сначала введите слово или фразу.", "err");
       return;
     }
-    setGenStatus("Запрашиваю Ollama…", "load");
+    setGenStatus("Запрашиваю модель…", "load");
     var live = liveSettings();
-    var chatUrl = live.url + "/api/chat";
+    var isOpenai = live.provider === "openai";
+    var chatUrl = isOpenai ? "api/llm/openai" : (live.url + "/api/chat");
     var payload = {
       model: live.model,
       messages: [
@@ -1661,13 +1824,13 @@
         { role: "user", content: "Слово или фраза: " + word }
       ],
       stream: false,
-      format: "json",
       options: {
         temperature: live.temperature,
         top_p: live.topP,
         num_ctx: live.numCtx
       }
     };
+    if (!isOpenai) payload.format = "json";
     logFetch(chatUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1685,7 +1848,7 @@
       .then(function (data) {
         var c = extractCard(data);
         if (c.error) {
-          setGenStatus(shortOllError(c.error, chatUrl), "err");
+          setGenStatus(shortOllError(c.error, chatUrl, isOpenai), "err");
           return;
         }
         fillForm(c.entry);
@@ -1694,7 +1857,7 @@
       })
       .catch(function (err) {
         var msg = err && err.message ? err.message : String(err);
-        setGenStatus(shortOllError(msg, chatUrl), "err");
+        setGenStatus(shortOllError(msg, chatUrl, isOpenai), "err");
       });
   });
 

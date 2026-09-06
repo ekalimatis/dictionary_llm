@@ -23,16 +23,30 @@ Docker-образ изолирует код в `/app`, а все изменяе�
 - `PORT` — порт (по умолчанию 8000);
 - `WORD_STORE` — каталог хранения `data.json`, `audio/`, `logs/`;
 - `FISH_API_KEY`, `FISH_MODEL`, `FISH_REFERENCE_ID` — опциональный ключ fish.audio
-  (если не заданы, используются значения из `server.py`).
+  (загружаются из `.env`, см. `.env.example`).
 
 ---
 
 ## 2. Локальный запуск (Docker Desktop / Docker Engine)
 
+Перед запуском создайте файл переменных из шаблона и заполните ключи:
+
+```bash
+cp .env.example .env      # затем отредактируйте .env (fish.audio, OPENAI_API_KEY)
+```
+
 ```bash
 cd word-trainer
 docker compose up -d --build
 docker compose ps
+```
+
+Без Docker (напрямую Python):
+
+```bash
+python -m pip install -r requirements.txt
+cp .env.example .env      # заполнить ключи
+python server.py          # http://127.0.0.1:8000
 ```
 
 Открыть: http://127.0.0.1:8000
@@ -225,7 +239,7 @@ docker compose up -d --build
 
 ### 8.1. Озвучка через fish.audio (внешний сервис)
 - Сервер должен иметь доступ в интернет к `https://api.fish.audio` (исходящие соединения).
-- Ключ задаётся env `FISH_API_KEY` (по умолчанию — ключ из кода).
+- Ключ задаётся в `.env` \(переменная `FISH_API_KEY`\) или через env при запуске.
 - Если fish.audio недоступен, слова всё равно сохраняются (без аудио), а в
   `logs/requests.log` фиксируются ошибки `external_request`.
 
