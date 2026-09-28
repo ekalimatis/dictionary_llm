@@ -312,6 +312,11 @@ body {
   border-radius: var(--radius);
 }
 
+.empty-actions {
+  text-align: center;
+  margin: 12px 0;
+}
+
 /* ---------- test ---------- */
 
 .fieldset {

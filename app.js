@@ -431,13 +431,26 @@
     }
     dictCount.textContent = count + " / " + WORDS.length;
     if (!list.length) {
-      dictList.innerHTML = '<div class="empty">Ничего не найдено</div>';
+      var qRaw = dictSearch.value.trim();
+      var msg = "Ничего не найдено" + (qRaw ? " по запросу «" + escapeHtml(qRaw) + "»" : "");
+      var goBtn = qRaw
+        ? '<div class="empty-actions"><button type="button" class="btn go-add" data-word="' + escapeHtml(qRaw) + '">Добавить слово «' + escapeHtml(qRaw) + '»</button></div>'
+        : "";
+      dictList.innerHTML = '<div class="empty">' + msg + "</div>" + goBtn;
       return;
     }
     dictList.innerHTML = list.map(wordCard).join("");
   }
 
   dictSearch.addEventListener("input", renderDict);
+
+  function goToAddWord(word) {
+    showView("add");
+    if (typeof resetAddForm === "function") resetAddForm();
+    $("#addWord").value = word || "";
+    var addW = $("#addWord");
+    if (addW && addW.focus) addW.focus();
+  }
 
   function wordById(id) {
     for (var i = 0; i < WORDS.length; i++) {
@@ -552,6 +565,13 @@
   }
 
   dictList.addEventListener("click", function (ev) {
+    var goBtn = ev.target.closest(".go-add");
+    if (goBtn) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      goToAddWord(goBtn.getAttribute("data-word"));
+      return;
+    }
     var sp = ev.target.closest(".speak");
     if (sp) {
       ev.preventDefault();
